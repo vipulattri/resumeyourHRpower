@@ -34,6 +34,8 @@ const emailSchema = new mongoose.Schema({
     email: String,
     contactNumber: String,
     dateOfBirth: String,
+    experience: String,
+    role: String,
     pdfPath: String,
     rawText: String
   }

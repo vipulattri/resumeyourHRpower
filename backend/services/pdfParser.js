@@ -7,7 +7,9 @@ function extractResumeData(text) {
     name: '',
     email: '',
     contactNumber: '',
-    dateOfBirth: ''
+    dateOfBirth: '',
+    experience: '',
+    role: ''
   };
 
   if (!text || text.length === 0) {
@@ -287,6 +289,109 @@ function extractResumeData(text) {
 
   if (!data.dateOfBirth) {
     console.log('❌ DOB not found');
+  }
+
+  // ========== EXTRACT EXPERIENCE ==========
+  console.log('🔍 Extracting experience...');
+  const experiencePatterns = [
+    /(?:experience|exp|total\s*experience|years?\s*of\s*experience|work\s*experience)\s*[:]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:years?|yrs?|yr)/gi,
+    /([0-9]+(?:\.[0-9]+)?)\s*(?:years?|yrs?|yr)\s*(?:of\s*)?(?:experience|exp)/gi,
+    /(?:experience|exp)\s*[:]?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:years?|yrs?|yr)/gi
+  ];
+  
+  for (const pattern of experiencePatterns) {
+    const match = originalText.match(pattern);
+    if (match) {
+      const expMatch = match[0].match(/([0-9]+(?:\.[0-9]+)?)/);
+      if (expMatch) {
+        data.experience = `${expMatch[1]} years`;
+        console.log(`✓ Experience found: "${data.experience}"`);
+        break;
+      }
+    }
+  }
+
+  if (!data.experience) {
+    console.log('❌ Experience not found');
+  }
+
+  // ========== EXTRACT ROLE/POSITION ==========
+  console.log('🔍 Extracting role/position...');
+  const rolePatterns = [
+    /(?:current\s*role|position|job\s*title|designation|role|title)\s*[:]?\s*([A-Za-z\s&]+(?:engineer|developer|scientist|analyst|manager|architect|specialist|consultant|lead|senior|junior|associate))/gi,
+    /(?:software\s*engineer|data\s*scientist|full\s*stack|frontend|backend|devops|ml\s*engineer|ai\s*engineer|web\s*developer|mobile\s*developer)/gi,
+    /(?:senior|junior|lead|principal)\s*(?:software\s*)?(?:engineer|developer|scientist|analyst|architect)/gi
+  ];
+  
+  // Common roles to look for
+  const commonRoles = [
+    'Software Engineer', 'Software Developer', 'Full Stack Developer',
+    'Frontend Developer', 'Backend Developer', 'Data Scientist',
+    'Data Analyst', 'ML Engineer', 'AI Engineer', 'DevOps Engineer',
+    'Mobile Developer', 'Web Developer', 'System Architect',
+    'Product Manager', 'Project Manager', 'Tech Lead', 'Senior Engineer',
+    'Junior Engineer', 'Associate Engineer'
+  ];
+  
+  // First, try to find explicit role labels
+  for (const pattern of rolePatterns) {
+    const matches = originalText.match(pattern);
+    if (matches && matches.length > 0) {
+      // Take the first match and clean it up
+      let role = matches[0].replace(/(?:current\s*role|position|job\s*title|designation|role|title)\s*[:]?\s*/gi, '').trim();
+      if (role.length > 3 && role.length < 50) {
+        // Capitalize properly
+        role = role.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+        data.role = role;
+        console.log(`✓ Role found (pattern): "${data.role}"`);
+        break;
+      }
+    }
+  }
+  
+  // If not found, search for common role keywords
+  if (!data.role) {
+    const textLower = originalText.toLowerCase();
+    for (const commonRole of commonRoles) {
+      const roleLower = commonRole.toLowerCase();
+      // Look for the role in the first 2000 characters (usually in header/objective)
+      if (textLower.substring(0, 2000).includes(roleLower)) {
+        data.role = commonRole;
+        console.log(`✓ Role found (common role): "${data.role}"`);
+        break;
+      }
+    }
+  }
+  
+  // If still not found, look for "Engineer", "Developer", "Scientist" etc. in first few lines
+  if (!data.role) {
+    for (let i = 0; i < Math.min(15, lines.length); i++) {
+      const line = lines[i].toLowerCase();
+      if (line.includes('engineer') || line.includes('developer') || line.includes('scientist') || 
+          line.includes('analyst') || line.includes('architect') || line.includes('manager')) {
+        // Try to extract a meaningful role from this line
+        const words = lines[i].split(/\s+/);
+        const roleWords = [];
+        for (const word of words) {
+          if (word.length > 2 && /^[A-Za-z]+$/.test(word)) {
+            roleWords.push(word);
+            if (word.toLowerCase().includes('engineer') || word.toLowerCase().includes('developer') || 
+                word.toLowerCase().includes('scientist') || word.toLowerCase().includes('analyst')) {
+              break;
+            }
+          }
+        }
+        if (roleWords.length > 0 && roleWords.length < 5) {
+          data.role = roleWords.join(' ');
+          console.log(`✓ Role found (keyword search): "${data.role}"`);
+          break;
+        }
+      }
+    }
+  }
+
+  if (!data.role) {
+    console.log('❌ Role not found');
   }
 
   console.log(`\n📊 Final extracted data:`, JSON.stringify(data, null, 2));

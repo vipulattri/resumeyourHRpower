@@ -3,8 +3,16 @@ const simpleParser = require('mailparser').simpleParser;
 const fs = require('fs-extra');
 const path = require('path');
 const pdfParse = require('pdf-parse');
-const Tesseract = require('tesseract.js');
 require('dotenv').config();
+
+// Optional: Tesseract.js for OCR (only load if available)
+let Tesseract = null;
+try {
+  Tesseract = require('tesseract.js');
+} catch (e) {
+  console.warn('⚠️  tesseract.js not installed. OCR functionality will be disabled.');
+  console.warn('   To enable OCR, run: npm install tesseract.js');
+}
 
 const Email = require('../models/Resume'); // File is Resume.js but exports Email model
 const { extractResumeData } = require('./pdfParser');
@@ -19,9 +27,16 @@ const imapConfig = {
     password: process.env.IMAP_PASSWORD,
     host: process.env.IMAP_HOST || 'imap.gmail.com',
     port: parseInt(process.env.IMAP_PORT) || 993,
-    tls: process.env.IMAP_TLS === 'true',
+    tls: true, // Always use TLS for Gmail
     tlsOptions: { rejectUnauthorized: false },
-    authTimeout: 3000
+    authTimeout: 20000, // 20 seconds for authentication
+    connTimeout: 20000, // 20 seconds for connection
+    keepalive: {
+      interval: 10000, // Send keepalive every 10 seconds
+      idleInterval: 300000, // 5 minutes
+      forceNoop: true // Force NOOP command
+    },
+    autotls: 'always' // Always use TLS
   }
 };
 
@@ -48,53 +63,204 @@ async function processEmail(connection, io) {
     
     const todayStr = formatDate(todayStart);
     
-    const fetchOptions = {
-      bodies: '',
-      struct: true
-    };
-    
     console.log(`📧 Searching for emails from today: ${todayStr}...`);
-    console.log(`Processing ALL emails from today (read/unread doesn't matter)`);
+    console.log(`Optimized strategy: Fetch only headers of last 20 emails, then filter by today`);
     
-    // Get all emails and filter by today's date
+    // Step 1: Get inbox info and fetch last 20 emails by sequence number (NO SEARCH - avoids Gmail throttling)
     let messages = [];
     
     try {
-      console.log('Step 1: Fetching recent emails...');
-      const allMessages = await connection.search(['ALL'], fetchOptions);
-      console.log(`✓ Found ${allMessages.length} total email(s) in inbox`);
+      console.log('Step 1: Getting inbox info and fetching last 20 emails by sequence number...');
+      console.log('   Strategy: Bypass SEARCH command completely (Gmail throttles it)');
+      console.log('   Using sequence numbers directly - much faster!');
       
-      // Limit to most recent 300 emails for performance
-      if (allMessages.length > 300) {
-        messages = allMessages.slice(0, 300);
-        console.log(`✓ Limited to ${messages.length} most recent emails for processing`);
-      } else {
-        messages = allMessages;
+      // Get inbox box info to know total message count
+      // Box should already be open from startMonitoring, but get info safely
+      let totalMessages = 0;
+      try {
+        const box = await connection.openBox('INBOX', true); // true = read-only mode
+        totalMessages = box.messages.total;
+      } catch (boxError) {
+        // Box might already be open, try to get current box
+        if (connection.mailbox) {
+          totalMessages = connection.mailbox.messages.total;
+        } else {
+          throw new Error('Cannot get inbox message count');
+        }
       }
-    } catch (allError) {
-      console.error(`Error getting emails: ${allError.message}`);
-      console.error(allError.stack);
-      return;
+      
+      console.log(`✓ Inbox has ${totalMessages} total message(s)`);
+      
+      if (totalMessages === 0) {
+        console.log(`\n❌ No emails found in inbox.\n`);
+        return;
+      }
+      
+      // Calculate sequence range for last 20 emails
+      const fetchCount = Math.min(20, totalMessages);
+      const startSeq = Math.max(1, totalMessages - fetchCount + 1);
+      const endSeq = totalMessages;
+      const seqRange = `${startSeq}:${endSeq}`;
+      
+      console.log(`   Fetching sequence range: ${seqRange} (last ${fetchCount} emails)`);
+      console.log('   Fetching headers only (no body/attachments - very fast)');
+      
+      // Access the underlying IMAP connection to use seq.fetch (bypasses search)
+      // imap-simple wraps the raw imap connection - try different property names
+      let rawImap = null;
+      
+      // Try different ways to access the underlying connection
+      if (connection._imap) {
+        rawImap = connection._imap;
+      } else if (connection.imap) {
+        rawImap = connection.imap;
+      } else if (connection.connection && connection.connection._imap) {
+        rawImap = connection.connection._imap;
+      }
+      
+      if (!rawImap) {
+        // If we can't access raw connection, fall back to search
+        throw new Error('Cannot access underlying IMAP connection - will use fallback');
+      }
+      
+      if (!rawImap.seq || typeof rawImap.seq.fetch !== 'function') {
+        throw new Error('Sequence fetch not available - will use fallback');
+      }
+      
+      // Fetch by sequence number - this is MUCH faster than search
+      const fetchOptions = {
+        bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE)', // Only headers
+        struct: true // Get structure for envelope
+      };
+      
+      // Use Promise to wrap the event-based fetch
+      messages = await new Promise((resolve, reject) => {
+        const fetchedMessages = [];
+        let messageCount = 0;
+        const expectedCount = endSeq - startSeq + 1;
+        
+        const timeout = setTimeout(() => {
+          reject(new Error('Sequence fetch timeout after 20 seconds'));
+        }, 20000);
+        
+        try {
+          const fetch = rawImap.seq.fetch(seqRange, fetchOptions);
+          
+          fetch.on('message', (msg, seqno) => {
+            const messageData = {
+              attributes: {
+                uid: null,
+                date: null,
+                envelope: null,
+                struct: null
+              },
+              parts: []
+            };
+            
+            msg.on('body', (stream, info) => {
+              let buffer = '';
+              stream.on('data', (chunk) => {
+                buffer += chunk.toString('utf8');
+              });
+              stream.on('end', () => {
+                // Header buffer parsed - we have envelope data from attributes
+              });
+            });
+            
+            msg.once('attributes', (attrs) => {
+              messageData.attributes.uid = attrs.uid;
+              messageData.attributes.date = attrs.date;
+              messageData.attributes.envelope = attrs.envelope;
+              messageData.attributes.struct = attrs.struct;
+            });
+            
+            msg.once('end', () => {
+              fetchedMessages.push(messageData);
+              messageCount++;
+              
+              if (messageCount === expectedCount) {
+                clearTimeout(timeout);
+                resolve(fetchedMessages);
+              }
+            });
+          });
+          
+          fetch.once('error', (err) => {
+            clearTimeout(timeout);
+            reject(err);
+          });
+          
+          fetch.once('end', () => {
+            if (messageCount < expectedCount && messageCount > 0) {
+              clearTimeout(timeout);
+              resolve(fetchedMessages); // Return what we got
+            } else if (messageCount === 0) {
+              clearTimeout(timeout);
+              reject(new Error('No messages fetched from sequence range'));
+            }
+          });
+        } catch (fetchErr) {
+          clearTimeout(timeout);
+          reject(fetchErr);
+        }
+      });
+      
+      console.log(`✓ Fetched ${messages.length} email(s) by sequence number (no SEARCH used!)`);
+      
+      if (messages.length === 0) {
+        console.log(`\n❌ No emails fetched.\n`);
+        return;
+      }
+      
+    } catch (fetchError) {
+      console.error(`❌ Error fetching emails by sequence: ${fetchError.message}`);
+      console.error(`   Error code: ${fetchError.code || 'N/A'}`);
+      console.error(`\n   Falling back to alternative method...`);
+      
+      // Fallback: Try a very simple search with timeout
+      try {
+        console.log('   Trying fallback: Simple search with 15 second timeout...');
+        const fallbackPromise = connection.search(['ALL'], { bodies: '', struct: true });
+        const fallbackTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Fallback timeout')), 15000);
+        });
+        
+        const fallbackMessages = await Promise.race([fallbackPromise, fallbackTimeout]);
+        messages = fallbackMessages.slice(-20); // Last 20 only
+        console.log(`✓ Fallback succeeded: Got ${messages.length} emails`);
+      } catch (fallbackError) {
+        console.error(`❌ Fallback also failed: ${fallbackError.message}`);
+        console.error(`\n   This might indicate:`);
+        console.error(`   - IMAP server is not responding`);
+        console.error(`   - Network connectivity issues`);
+        console.error(`   - Gmail IMAP is throttling requests`);
+        console.error(`\n   Possible solutions:`);
+        console.error(`   1. Wait a few minutes and try again (Gmail rate limiting)`);
+        console.error(`   2. Check your internet connection`);
+        console.error(`   3. Verify IMAP is enabled in Gmail settings`);
+        return;
+      }
     }
     
-    // Filter to only include emails from today
+    // Step 3: Filter to only include emails from today (using header dates)
     if (messages.length > 0) {
       const originalCount = messages.length;
-      console.log(`Step 2: Filtering ${originalCount} emails to find today's emails...`);
+      console.log(`Step 3: Filtering ${originalCount} emails to find today's emails...`);
       
       messages = messages.filter(msg => {
         try {
           let emailDate = null;
           
-          if (msg.attributes.date) {
-            emailDate = new Date(msg.attributes.date);
-          } else if (msg.attributes.envelope && msg.attributes.envelope.date) {
+          // Get date from envelope (header data we just fetched)
+          if (msg.attributes.envelope && msg.attributes.envelope.date) {
             emailDate = new Date(msg.attributes.envelope.date);
+          } else if (msg.attributes.date) {
+            emailDate = new Date(msg.attributes.date);
           }
           
           if (!emailDate || isNaN(emailDate.getTime())) {
             console.log(`  ⚠️  Email UID ${msg.attributes.uid} has no valid date, including it anyway`);
-            return true;
+            return true; // Include emails with invalid dates to be safe
           }
           
           // Compare dates only (not times) - check if it's the same calendar day
@@ -104,25 +270,29 @@ async function processEmail(connection, io) {
           const isToday = emailDateOnly.getTime() === todayDateOnly.getTime();
           
           if (isToday) {
+            const subject = msg.attributes.envelope?.subject || 'No Subject';
             console.log(`  ✓ Email UID ${msg.attributes.uid} is from today: ${emailDate.toLocaleString()}`);
+            console.log(`    Subject: "${subject}"`);
           } else {
             console.log(`  ❌ Email UID ${msg.attributes.uid} is from ${emailDate.toLocaleDateString()}, skipping`);
           }
           return isToday;
         } catch (err) {
           console.log(`  ⚠️  Error checking date for email UID ${msg.attributes.uid}:`, err.message);
-          return true;
+          return true; // Include on error to be safe
         }
       });
       console.log(`✓ Filtered ${originalCount} total emails to ${messages.length} from today`);
     }
     
     if (messages.length === 0) {
-      console.log(`No emails found from today (${todayStr}).`);
+      console.log(`\n❌ No emails found from today (${todayStr}).`);
+      console.log(`   Please check if emails were sent today.\n`);
       return;
     }
 
-    console.log(`✓ Found ${messages.length} email(s) from today`);
+    console.log(`\n✅ Found ${messages.length} email(s) from today`);
+    console.log(`\n🚀 Step 4: Now fetching full content (body + attachments) only for today's emails...\n`);
 
     for (const message of messages) {
       const uid = message.attributes.uid;
@@ -134,64 +304,91 @@ async function processEmail(connection, io) {
       }
 
       try {
-        console.log(`\n📨 Processing email UID ${uid}...`);
+        // Extract subject and sender info from message attributes (from headers we fetched)
+        let emailSubject = 'No Subject';
+        let emailFrom = 'Unknown Sender';
+        let emailDate = null;
         
-        // Fetch the full raw email message
+        if (message.attributes.envelope) {
+          if (message.attributes.envelope.subject) {
+            emailSubject = message.attributes.envelope.subject;
+          }
+          if (message.attributes.envelope.from && message.attributes.envelope.from.length > 0) {
+            const fromAddr = message.attributes.envelope.from[0];
+            emailFrom = fromAddr.name || fromAddr.address || 'Unknown';
+          }
+          if (message.attributes.envelope.date) {
+            emailDate = new Date(message.attributes.envelope.date);
+          }
+        }
+        
+        console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.log(`📨 Processing Email UID ${uid}:`);
+        console.log(`   From: ${emailFrom}`);
+        console.log(`   Subject: "${emailSubject}"`);
+        console.log(`   Date: ${emailDate ? emailDate.toLocaleString() : 'Unknown'}`);
+        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        
+        // NOW fetch the full email body and attachments (only for emails from today)
+        console.log(`   Fetching full email content (body + attachments)...`);
         let emailBody = null;
         
-        // Get the full message body from the parts
-        if (message.parts && message.parts.length > 0) {
-          const fullPart = message.parts.find(part => part.which === '' || part.which === undefined);
-          if (fullPart && fullPart.body) {
-            emailBody = fullPart.body;
-            console.log(`✓ Got email body from message.parts, size: ${emailBody.length} bytes`);
-          } else if (message.parts[0] && message.parts[0].body) {
-            emailBody = message.parts[0].body;
-            console.log(`✓ Got email body from first part, size: ${emailBody.length} bytes`);
-          }
-        }
-        
-        // If we don't have the body yet, fetch it using getPartData
-        if (!emailBody) {
-          try {
-            const parts = imap.getParts(message.attributes.struct);
-            if (parts && parts.length > 0) {
-              let rootPart = parts.find(part => !part.partID || part.partID === '1');
-              if (!rootPart) {
-                rootPart = parts[0];
-              }
-              
-              if (rootPart) {
-                console.log(`Fetching full email using partID: ${rootPart.partID || 'root'}`);
-                emailBody = await connection.getPartData(message, rootPart);
-                console.log(`✓ Fetched email body using getPartData, size: ${emailBody ? emailBody.length : 0} bytes`);
-              }
-            }
-          } catch (err) {
-            console.error(`Error fetching part data:`, err.message);
-          }
-        }
-        
-        // Last resort: Re-fetch the message completely
-        if (!emailBody) {
-          try {
-            console.log(`Re-fetching full message for UID ${uid}...`);
-            const refetchOptions = {
-              bodies: '',
-              struct: true
-            };
-            const refetched = await connection.search([['UID', uid]], refetchOptions);
-            if (refetched && refetched.length > 0 && refetched[0].parts) {
-              const refetchMsg = refetched[0];
-              const refetchFullPart = refetchMsg.parts.find(p => !p.which || p.which === '') || refetchMsg.parts[0];
-              if (refetchFullPart && refetchFullPart.body) {
-                emailBody = refetchFullPart.body;
-                console.log(`✓ Re-fetched email body, size: ${emailBody.length} bytes`);
+        try {
+          // Fetch full email with body and structure for this specific UID
+          const fullFetchOptions = {
+            bodies: '', // Full body
+            struct: true // Structure for attachments
+          };
+          
+          const fullFetchPromise = connection.search([['UID', uid]], fullFetchOptions);
+          const fullFetchTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Full fetch timeout')), 30000);
+          });
+          
+          const fullMessages = await Promise.race([fullFetchPromise, fullFetchTimeout]);
+          
+          if (fullMessages && fullMessages.length > 0) {
+            const fullMessage = fullMessages[0];
+            
+            // Get the full message body from the parts
+            if (fullMessage.parts && fullMessage.parts.length > 0) {
+              const fullPart = fullMessage.parts.find(part => part.which === '' || part.which === undefined);
+              if (fullPart && fullPart.body) {
+                emailBody = fullPart.body;
+                console.log(`   ✓ Got email body, size: ${emailBody.length} bytes`);
+              } else if (fullMessage.parts[0] && fullMessage.parts[0].body) {
+                emailBody = fullMessage.parts[0].body;
+                console.log(`   ✓ Got email body from first part, size: ${emailBody.length} bytes`);
               }
             }
-          } catch (err) {
-            console.error(`Error re-fetching message:`, err.message);
+            
+            // If we don't have the body yet, fetch it using getPartData
+            if (!emailBody && fullMessage.attributes.struct) {
+              try {
+                const parts = imap.getParts(fullMessage.attributes.struct);
+                if (parts && parts.length > 0) {
+                  let rootPart = parts.find(part => !part.partID || part.partID === '1');
+                  if (!rootPart) {
+                    rootPart = parts[0];
+                  }
+                  
+                  if (rootPart) {
+                    emailBody = await connection.getPartData(fullMessage, rootPart);
+                    console.log(`   ✓ Fetched email body using getPartData, size: ${emailBody ? emailBody.length : 0} bytes`);
+                  }
+                }
+              } catch (err) {
+                console.error(`   Error fetching part data:`, err.message);
+              }
+            }
+            
+            // Update message with full data for processing
+            message.parts = fullMessage.parts;
+            message.attributes.struct = fullMessage.attributes.struct;
           }
+        } catch (fetchError) {
+          console.error(`   ❌ Error fetching full email content: ${fetchError.message}`);
+          // Continue processing with what we have
         }
         
         if (!emailBody) {
@@ -367,7 +564,12 @@ async function processEmailContent(emailData, uid, io) {
               console.log(`  📸 Running OCR on PDF directly (this may take a moment)...`);
               
               try {
-                // Try to use Tesseract.js for OCR
+                // Try to use Tesseract.js for OCR (if available)
+                if (!Tesseract) {
+                  console.log(`  ⚠️  Tesseract.js not available, skipping OCR`);
+                  throw new Error('Tesseract.js not installed');
+                }
+                
                 // Note: Tesseract.js works best with images. For PDFs, consider converting pages to images first
                 // using pdf-img-convert or similar (requires native dependencies on Windows)
                 const { data: { text: ocrText } } = await Tesseract.recognize(pdfBuffer, 'eng', {
@@ -537,28 +739,94 @@ async function startMonitoring(io) {
   }
 
   try {
-    console.log('Connecting to IMAP server...');
+    // Check IMAP configuration
+    if (!process.env.IMAP_USER || !process.env.IMAP_PASSWORD) {
+      console.error('❌ IMAP credentials not configured!');
+      console.error('   Please set IMAP_USER and IMAP_PASSWORD in your .env file');
+      return;
+    }
+
+    console.log('🔄 Connecting to IMAP server...');
+    console.log(`   Host: ${imapConfig.imap.host}`);
+    console.log(`   Port: ${imapConfig.imap.port}`);
+    console.log(`   User: ${imapConfig.imap.user}`);
+    
     connection = await imap.connect(imapConfig);
     
+    // Add error handlers to prevent unhandled errors
+    connection.on('error', (err) => {
+      console.error('❌ IMAP connection error:', err.message);
+      console.error('   Code:', err.code);
+      isMonitoring = false;
+      // Attempt to reconnect after a delay
+      setTimeout(() => {
+        if (!isMonitoring) {
+          console.log('🔄 Attempting to reconnect to IMAP server...');
+          startMonitoring(io).catch(err => {
+            console.error('❌ Reconnection failed:', err.message);
+          });
+        }
+      }, 30000); // Retry after 30 seconds
+    });
+    
+    connection.on('end', () => {
+      console.warn('⚠️  IMAP connection ended');
+      isMonitoring = false;
+    });
+    
     await connection.openBox('INBOX');
-    console.log('✓ Connected to IMAP server');
+    console.log('✅ Connected to IMAP server successfully');
     
     isMonitoring = true;
 
     // Check for new emails every 10 seconds
     const checkInterval = setInterval(async () => {
+      if (!isMonitoring || !connection) {
+        clearInterval(checkInterval);
+        return;
+      }
+      
       try {
         await connection.openBox('INBOX');
         await processEmail(connection, io);
       } catch (error) {
-        console.error('Error in email check interval:', error.message);
-        try {
-          connection.end();
-          connection = await imap.connect(imapConfig);
-          await connection.openBox('INBOX');
-          console.log('Reconnected to IMAP server');
-        } catch (reconnectError) {
-          console.error('Reconnection failed:', reconnectError.message);
+        console.error('❌ Error in email check interval:', error.message);
+        console.error('   Code:', error.code);
+        
+        // Handle connection reset errors
+        if (error.code === 'ECONNRESET' || error.message.includes('ECONNRESET')) {
+          console.log('🔄 IMAP connection reset, attempting to reconnect...');
+          isMonitoring = false;
+          try {
+            if (connection) {
+              connection.removeAllListeners();
+              await connection.end();
+            }
+          } catch (e) {
+            // Ignore errors when closing
+          }
+          
+          // Reconnect after a delay
+          setTimeout(() => {
+            startMonitoring(io).catch(err => {
+              console.error('❌ Reconnection failed:', err.message);
+            });
+          }, 10000); // Retry after 10 seconds
+        } else {
+          // For other errors, try to reconnect immediately
+          try {
+            if (connection) {
+              connection.removeAllListeners();
+              await connection.end();
+            }
+            connection = await imap.connect(imapConfig);
+            await connection.openBox('INBOX');
+            console.log('✅ Reconnected to IMAP server');
+            isMonitoring = true;
+          } catch (reconnectError) {
+            console.error('❌ Reconnection failed:', reconnectError.message);
+            isMonitoring = false;
+          }
         }
       }
     }, 10000); // Check every 10 seconds
@@ -566,17 +834,44 @@ async function startMonitoring(io) {
     // Listen for new emails in real-time
     connection.on('mail', async () => {
       console.log('📬 New email detected via IMAP event!');
-      await processEmail(connection, io);
+      try {
+        await processEmail(connection, io);
+      } catch (error) {
+        console.error('❌ Error processing new email:', error.message);
+      }
     });
 
     // Process existing emails on startup
-    console.log('Checking for existing emails from today...');
+    console.log('📧 Checking for existing emails from today...');
     await processEmail(connection, io);
     
   } catch (error) {
-    console.error('Failed to connect to IMAP server:', error.message);
-    console.error('Please check your IMAP credentials in .env file');
-    console.error(error.stack);
+    console.error('❌ Failed to connect to IMAP server:', error.message);
+    console.error('   Error code:', error.code);
+    
+    if (error.code === 'ENOTFOUND' || error.message.includes('ENOTFOUND')) {
+      console.error('\n   This usually means:');
+      console.error('   - IMAP hostname cannot be resolved (check your internet connection)');
+      console.error('   - IMAP_HOST in .env might be incorrect');
+      console.error('   - DNS resolution failed');
+    } else if (error.code === 'ECONNREFUSED') {
+      console.error('\n   This usually means:');
+      console.error('   - IMAP server is not accessible');
+      console.error('   - Firewall is blocking the connection');
+      console.error('   - Wrong port number');
+    } else if (error.code === 'ETIMEDOUT') {
+      console.error('\n   This usually means:');
+      console.error('   - Connection timeout');
+      console.error('   - Network connectivity issues');
+    }
+    
+    console.error('\n   Please check:');
+    console.error('   1. IMAP_USER and IMAP_PASSWORD in .env file');
+    console.error('   2. IMAP_HOST (default: imap.gmail.com)');
+    console.error('   3. IMAP_PORT (default: 993)');
+    console.error('   4. Your internet connection');
+    console.error('   5. For Gmail: Enable "Less secure app access" or use App Password\n');
+    
     isMonitoring = false;
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 import {
@@ -19,93 +19,151 @@ import {
   Avatar,
   Divider,
   Paper,
-  alpha
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
+  Tab,
+  TextField,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  InputAdornment,
+  LinearProgress
 } from '@mui/material';
 import {
   Email as EmailIcon,
   Delete as DeleteIcon,
-  AttachFile as AttachFileIcon,
   Person as PersonIcon,
   Phone as PhoneIcon,
   CalendarToday as CalendarIcon,
+  Work as WorkIcon,
+  BusinessCenter as BusinessCenterIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
-  CloudDone as CloudDoneIcon,
-  CloudOff as CloudOffIcon
+  Assessment as AssessmentIcon,
+  TrendingUp as TrendingUpIcon,
+  Add as AddIcon,
+  Link as LinkIcon,
+  CloudUpload as CloudUploadIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const socket = io(API_URL);
 
-// Create a beautiful dark theme with purple/blue gradients
+// Professional light theme
 const theme = createTheme({
   palette: {
-    mode: 'dark',
+    mode: 'light',
     primary: {
-      main: '#6366f1',
-      light: '#818cf8',
-      dark: '#4f46e5',
+      main: '#2563eb',
+      light: '#3b82f6',
+      dark: '#1e40af',
     },
     secondary: {
-      main: '#8b5cf6',
-      light: '#a78bfa',
-      dark: '#7c3aed',
+      main: '#7c3aed',
+      light: '#8b5cf6',
+      dark: '#6d28d9',
     },
     background: {
-      default: '#0f172a',
-      paper: '#1e293b',
+      default: '#f8fafc',
+      paper: '#ffffff',
     },
     text: {
-      primary: '#f1f5f9',
-      secondary: '#cbd5e1',
+      primary: '#1e293b',
+      secondary: '#64748b',
+    },
+    success: {
+      main: '#10b981',
+    },
+    error: {
+      main: '#ef4444',
+    },
+    grey: {
+      50: '#f8fafc',
+      100: '#f1f5f9',
+      200: '#e2e8f0',
+      300: '#cbd5e1',
+      400: '#94a3b8',
+      500: '#64748b',
+      600: '#475569',
+      700: '#334155',
+      800: '#1e293b',
+      900: '#0f172a',
     },
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
     h1: {
-      fontWeight: 700,
+      fontWeight: 800,
       fontSize: '2.5rem',
+      letterSpacing: '-0.02em',
+      color: '#1e293b',
     },
     h2: {
-      fontWeight: 600,
+      fontWeight: 700,
       fontSize: '1.75rem',
+      color: '#1e293b',
     },
     h3: {
       fontWeight: 600,
       fontSize: '1.5rem',
+      color: '#1e293b',
+    },
+    h4: {
+      fontWeight: 600,
+      fontSize: '1.25rem',
+      color: '#1e293b',
+    },
+    body1: {
+      color: '#475569',
+    },
+    body2: {
+      color: '#64748b',
     },
   },
   shape: {
-    borderRadius: 16,
+    borderRadius: 12,
   },
   components: {
     MuiCard: {
       styleOverrides: {
         root: {
-          background: 'linear-gradient(145deg, #1e293b 0%, #334155 100%)',
-          border: '1px solid rgba(148, 163, 184, 0.1)',
-          backdropFilter: 'blur(10px)',
+          boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+          border: '1px solid #e2e8f0',
           transition: 'all 0.3s ease',
           '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: '0 20px 40px rgba(99, 102, 241, 0.2)',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            transform: 'translateY(-2px)',
           },
         },
       },
     },
-    MuiChip: {
+    MuiButton: {
       styleOverrides: {
         root: {
-          fontWeight: 500,
+          textTransform: 'none',
+          fontWeight: 600,
+          borderRadius: 8,
+          padding: '10px 24px',
         },
       },
     },
   },
 });
 
-// Motion variants for animations
+// Pie chart colors
+const COLORS = ['#2563eb', '#7c3aed', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+// Motion variants
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0 },
@@ -116,6 +174,34 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
   const [stats, setStats] = useState({ count: 0 });
+  const [tabValue, setTabValue] = useState(0);
+  const [isConnected, setIsConnected] = useState(false);
+  const [addResumeOpen, setAddResumeOpen] = useState(false);
+  const [resumeUrl, setResumeUrl] = useState('');
+  const [addingResume, setAddingResume] = useState(false);
+
+  // Filter only emails with resume data
+  const resumes = useMemo(() => {
+    return emails.filter(email => 
+      email.hasAttachment && 
+      email.attachmentData && 
+      (email.attachmentData.name || email.attachmentData.email)
+    );
+  }, [emails]);
+
+  // Calculate role statistics
+  const roleStats = useMemo(() => {
+    const roleCount = {};
+    resumes.forEach(resume => {
+      const role = resume.attachmentData?.role || 'Not Specified';
+      roleCount[role] = (roleCount[role] || 0) + 1;
+    });
+
+    return Object.entries(roleCount)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10); // Top 10 roles
+  }, [resumes]);
 
   useEffect(() => {
     fetchEmails();
@@ -123,6 +209,7 @@ function App() {
 
     socket.on('connect', () => {
       console.log('Connected to server');
+      setIsConnected(true);
     });
 
     socket.on('newEmail', (data) => {
@@ -138,18 +225,15 @@ function App() {
         setNotification(null);
       }, 5000);
     });
-    
-    socket.on('newResume', (data) => {
-      socket.emit('newEmail', data);
-    });
 
     socket.on('disconnect', () => {
       console.log('Disconnected from server');
+      setIsConnected(false);
     });
 
     return () => {
       socket.off('connect');
-      socket.off('newResume');
+      socket.off('newEmail');
       socket.off('disconnect');
     };
   }, []);
@@ -163,7 +247,7 @@ function App() {
       console.error('Error fetching emails:', error);
       setNotification({
         type: 'error',
-        message: 'Failed to fetch emails'
+        message: 'Failed to fetch resumes'
       });
     } finally {
       setLoading(false);
@@ -179,40 +263,80 @@ function App() {
     }
   };
 
-  const deleteEmail = async (id) => {
+  const deleteResume = async (id) => {
     try {
       await axios.delete(`${API_URL}/api/resumes/${id}`);
       fetchEmails();
       fetchStats();
       setNotification({
         type: 'success',
-        message: 'Email deleted successfully'
+        message: 'Resume deleted successfully'
       });
       setTimeout(() => setNotification(null), 3000);
     } catch (error) {
-      console.error('Error deleting email:', error);
+      console.error('Error deleting resume:', error);
       setNotification({
         type: 'error',
-        message: 'Failed to delete email'
+        message: 'Failed to delete resume'
       });
       setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  const handleAddResume = async () => {
+    if (!resumeUrl.trim()) {
+      setNotification({
+        type: 'error',
+        message: 'Please enter a valid PDF URL'
+      });
+      return;
+    }
+
+    try {
+      setAddingResume(true);
+      const response = await axios.post(`${API_URL}/api/resumes/add-from-url`, {
+        url: resumeUrl.trim()
+      });
+
+      setNotification({
+        type: 'success',
+        message: 'Resume added successfully!'
+      });
+
+      setAddResumeOpen(false);
+      setResumeUrl('');
+      fetchEmails();
+      fetchStats();
+
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      console.error('Error adding resume:', error);
+      setNotification({
+        type: 'error',
+        message: error.response?.data?.error || 'Failed to add resume from URL'
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setAddingResume(false);
     }
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      day: 'numeric'
     });
   };
 
   const handleCloseNotification = () => {
     setNotification(null);
+  };
+
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
   };
 
   return (
@@ -221,104 +345,131 @@ function App() {
       <Box
         sx={{
           minHeight: '100vh',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #667eea 100%)',
-          backgroundSize: '400% 400%',
-          animation: 'gradientShift 15s ease infinite',
+          background: 'linear-gradient(to bottom, #f8fafc 0%, #ffffff 100%)',
           padding: { xs: 2, sm: 3, md: 4 },
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.3) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.3) 0%, transparent 50%)',
-            pointerEvents: 'none',
-          },
         }}
       >
-        <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1 }}>
+        <Container maxWidth="xl">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <Box sx={{ textAlign: 'center', mb: 4, mt: 2 }}>
-              <Typography
-                variant="h1"
-                sx={{
-                  background: 'linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                  mb: 1,
-                  fontWeight: 800,
-                  fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' },
-                }}
-              >
-                📧 Email Monitor
-              </Typography>
-              <Typography
-                variant="subtitle1"
-                sx={{
-                  color: 'rgba(255, 255, 255, 0.8)',
-                  fontSize: { xs: '0.9rem', sm: '1rem' },
-                  mb: 3,
-                }}
-              >
-                Real-time Email Processing System
-              </Typography>
+            <Box sx={{ mb: 4, mt: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Box>
+                  <Typography
+                    variant="h1"
+                    sx={{
+                      background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                      mb: 1,
+                      fontWeight: 900,
+                      fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' },
+                    }}
+                  >
+                    youHRpower
+                  </Typography>
+                  <Typography
+                    variant="subtitle1"
+                    sx={{
+                      color: '#64748b',
+                      fontSize: { xs: '0.9rem', sm: '1rem' },
+                    }}
+                  >
+                    Intelligent Resume Management System
+                  </Typography>
+                </Box>
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setAddResumeOpen(true)}
+                  sx={{
+                    background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                    boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #1e40af 0%, #6d28d9 100%)',
+                      boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.4)',
+                    },
+                  }}
+                >
+                  Add Resume
+                </Button>
+              </Box>
 
               {/* Stats Cards */}
-              <Grid container spacing={2} justifyContent="center" sx={{ mb: 4 }}>
-                <Grid item xs={12} sm={6} md={4}>
+              <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid item xs={12} sm={6} md={3}>
                   <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    <Card
-                      sx={{
-                        background: 'linear-gradient(145deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)',
-                        backdropFilter: 'blur(20px)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                      }}
-                    >
+                    <Card>
                       <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <Typography variant="h2" sx={{ color: '#fff', fontWeight: 700, mb: 1 }}>
-                          {stats.count}
+                        <BusinessCenterIcon sx={{ fontSize: 40, color: '#2563eb', mb: 1 }} />
+                        <Typography variant="h2" sx={{ color: '#1e293b', fontWeight: 700, mb: 1 }}>
+                          {resumes.length}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-                          Total Emails
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          Total Resumes
                         </Typography>
                       </CardContent>
                     </Card>
                   </motion.div>
                 </Grid>
-                <Grid item xs={12} sm={6} md={4}>
+                <Grid item xs={12} sm={6} md={3}>
                   <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    <Card
-                      sx={{
-                        background: socket.connected
-                          ? 'linear-gradient(145deg, rgba(16, 185, 129, 0.3) 0%, rgba(5, 150, 105, 0.3) 100%)'
-                          : 'linear-gradient(145deg, rgba(239, 68, 68, 0.3) 0%, rgba(220, 38, 38, 0.3) 100%)',
-                        backdropFilter: 'blur(20px)',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                      }}
-                    >
+                    <Card>
                       <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        {socket.connected ? (
+                        <AssessmentIcon sx={{ fontSize: 40, color: '#7c3aed', mb: 1 }} />
+                        <Typography variant="h2" sx={{ color: '#1e293b', fontWeight: 700, mb: 1 }}>
+                          {roleStats.length}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          Unique Roles
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                        {isConnected ? (
                           <CheckCircleIcon sx={{ fontSize: 40, color: '#10b981', mb: 1 }} />
                         ) : (
                           <ErrorIcon sx={{ fontSize: 40, color: '#ef4444', mb: 1 }} />
                         )}
-                        <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
-                          {socket.connected ? 'Connected' : 'Disconnected'}
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {isConnected ? 'Live Sync' : 'Offline'}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Card>
+                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                        <TrendingUpIcon sx={{ fontSize: 40, color: '#f59e0b', mb: 1 }} />
+                        <Typography variant="h2" sx={{ color: '#1e293b', fontWeight: 700, mb: 1 }}>
+                          {roleStats[0]?.value || 0}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          Top Role Count
                         </Typography>
                       </CardContent>
                     </Card>
@@ -345,277 +496,428 @@ function App() {
             </Alert>
           </Snackbar>
 
+          {/* Add Resume Dialog */}
+          <Dialog 
+            open={addResumeOpen} 
+            onClose={() => !addingResume && setAddResumeOpen(false)}
+            maxWidth="sm"
+            fullWidth
+          >
+            <DialogTitle sx={{ pb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LinkIcon sx={{ color: '#2563eb' }} />
+                <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                  Add Resume from URL
+                </Typography>
+              </Box>
+            </DialogTitle>
+            <DialogContent>
+              <Box sx={{ pt: 2 }}>
+                <TextField
+                  fullWidth
+                  label="PDF Resume URL"
+                  placeholder="https://example.com/resume.pdf"
+                  value={resumeUrl}
+                  onChange={(e) => setResumeUrl(e.target.value)}
+                  disabled={addingResume}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LinkIcon />
+                      </InputAdornment>
+                    ),
+                  }}
+                  helperText="Enter a direct link to a PDF resume file"
+                  sx={{ mb: 2 }}
+                />
+                {addingResume && (
+                  <Box sx={{ mt: 2 }}>
+                    <LinearProgress />
+                    <Typography variant="body2" sx={{ mt: 1, color: '#64748b', textAlign: 'center' }}>
+                      Processing resume...
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ p: 3, pt: 2 }}>
+              <Button 
+                onClick={() => setAddResumeOpen(false)} 
+                disabled={addingResume}
+                sx={{ color: '#64748b' }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddResume}
+                variant="contained"
+                disabled={addingResume || !resumeUrl.trim()}
+                startIcon={addingResume ? <CircularProgress size={16} /> : <CloudUploadIcon />}
+                sx={{
+                  background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #1e40af 0%, #6d28d9 100%)',
+                  },
+                }}
+              >
+                {addingResume ? 'Processing...' : 'Add Resume'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          {/* Tabs */}
+          <Box sx={{ mb: 4, borderBottom: 1, borderColor: 'divider' }}>
+            <Tabs
+              value={tabValue}
+              onChange={handleTabChange}
+              sx={{
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                },
+              }}
+            >
+              <Tab label="Resume Dashboard" icon={<BusinessCenterIcon />} iconPosition="start" />
+              <Tab label="Role Analytics" icon={<AssessmentIcon />} iconPosition="start" />
+            </Tabs>
+          </Box>
+
           {/* Main Content */}
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-              <CircularProgress size={60} sx={{ color: '#6366f1' }} />
+              <CircularProgress size={60} sx={{ color: '#2563eb' }} />
             </Box>
-          ) : emails.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5 }}
-            >
-              <Card
-                sx={{
-                  textAlign: 'center',
-                  py: 8,
-                  background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.8) 0%, rgba(51, 65, 85, 0.8) 100%)',
-                }}
+          ) : tabValue === 0 ? (
+            // Resume Dashboard Tab
+            resumes.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5 }}
               >
-                <CardContent>
-                  <EmailIcon sx={{ fontSize: 80, color: 'rgba(255, 255, 255, 0.3)', mb: 2 }} />
-                  <Typography variant="h4" sx={{ mb: 1, color: '#fff' }}>
-                    No emails found
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                    Emails received today will appear here in real-time
-                  </Typography>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ) : (
-            <Grid container spacing={3}>
-              <AnimatePresence>
-                {emails.map((email, index) => (
-                  <Grid item xs={12} sm={6} lg={4} key={email._id}>
-                    <motion.div
-                      variants={cardVariants}
-                      initial="hidden"
-                      animate="visible"
-                      exit="hidden"
-                      transition={{ duration: 0.3, delay: index * 0.1 }}
-                      whileHover={{ y: -4 }}
+                <Card
+                  sx={{
+                    textAlign: 'center',
+                    py: 8,
+                  }}
+                >
+                  <CardContent>
+                    <BusinessCenterIcon sx={{ fontSize: 80, color: '#cbd5e1', mb: 2 }} />
+                    <Typography variant="h4" sx={{ mb: 1, color: '#1e293b' }}>
+                      No Resumes Found
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: '#64748b', mb: 3 }}>
+                      Add resumes via email or URL to get started
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<AddIcon />}
+                      onClick={() => setAddResumeOpen(true)}
+                      sx={{
+                        background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                      }}
                     >
-                      <Card
-                        sx={{
-                          height: '100%',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          position: 'relative',
-                          overflow: 'visible',
-                        }}
+                      Add Your First Resume
+                    </Button>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : (
+              <Grid container spacing={3}>
+                <AnimatePresence>
+                  {resumes.map((resume, index) => (
+                    <Grid item xs={12} md={6} lg={4} key={resume._id}>
+                      <motion.div
+                        variants={cardVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="hidden"
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
+                        whileHover={{ y: -4 }}
                       >
-                        <CardContent sx={{ flexGrow: 1, p: 3 }}>
-                          {/* Header */}
-                          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
-                              <Avatar
+                        <Card
+                          sx={{
+                            height: '100%',
+                            display: 'flex',
+                            flexDirection: 'column',
+                          }}
+                        >
+                          <CardContent sx={{ flexGrow: 1, p: 3 }}>
+                            {/* Header */}
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                                <Avatar
+                                  sx={{
+                                    bgcolor: '#2563eb',
+                                    width: 56,
+                                    height: 56,
+                                    fontSize: '1.5rem',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {(resume.attachmentData?.name || 'U')[0].toUpperCase()}
+                                </Avatar>
+                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                  <Typography
+                                    variant="h6"
+                                    sx={{
+                                      fontWeight: 700,
+                                      color: '#1e293b',
+                                      mb: 0.5,
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {resume.attachmentData?.name || 'Unknown Candidate'}
+                                  </Typography>
+                                  {resume.attachmentData?.role && (
+                                    <Chip
+                                      label={resume.attachmentData.role}
+                                      size="small"
+                                      sx={{
+                                        bgcolor: '#eff6ff',
+                                        color: '#2563eb',
+                                        border: '1px solid #dbeafe',
+                                        fontWeight: 600,
+                                        fontSize: '0.75rem',
+                                      }}
+                                    />
+                                  )}
+                                </Box>
+                              </Box>
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  if (window.confirm('Are you sure you want to delete this resume?')) {
+                                    deleteResume(resume._id);
+                                  }
+                                }}
                                 sx={{
-                                  bgcolor: email.hasAttachment ? '#6366f1' : '#8b5cf6',
-                                  width: 48,
-                                  height: 48,
+                                  color: '#64748b',
+                                  '&:hover': {
+                                    color: '#ef4444',
+                                    bgcolor: '#fee2e2',
+                                  },
                                 }}
                               >
-                                {(email.fromName || email.from || 'U')[0].toUpperCase()}
-                              </Avatar>
-                              <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography
-                                  variant="h6"
-                                  sx={{
-                                    fontWeight: 600,
-                                    color: '#fff',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {email.fromName || email.from?.split('@')[0] || 'Unknown Sender'}
-                                </Typography>
-                                <Typography
-                                  variant="caption"
-                                  sx={{
-                                    color: 'rgba(255, 255, 255, 0.6)',
-                                    display: 'block',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {email.from || 'N/A'}
-                                </Typography>
-                              </Box>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
                             </Box>
-                            <IconButton
-                              size="small"
-                              onClick={() => {
-                                if (window.confirm('Are you sure you want to delete this email?')) {
-                                  deleteEmail(email._id);
-                                }
-                              }}
-                              sx={{
-                                color: 'rgba(255, 255, 255, 0.7)',
-                                '&:hover': {
-                                  color: '#ef4444',
-                                  bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                },
-                              }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
 
-                          {/* Subject */}
-                          <Typography
-                            variant="subtitle1"
-                            sx={{
-                              fontWeight: 600,
-                              color: '#fff',
-                              mb: 2,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                            }}
-                          >
-                            {email.subject || 'No Subject'}
-                          </Typography>
+                            <Divider sx={{ my: 2 }} />
 
-                          <Divider sx={{ my: 2, bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
-
-                          {/* PDF Attachment Data */}
-                          {email.hasAttachment && email.attachmentData && (
-                            <Box
-                              sx={{
-                                mb: 2,
-                                p: 2,
-                                borderRadius: 2,
-                                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
-                                border: '1px solid rgba(99, 102, 241, 0.3)',
-                              }}
-                            >
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                                <AttachFileIcon sx={{ fontSize: 18, color: '#818cf8' }} />
-                                <Typography variant="caption" sx={{ fontWeight: 600, color: '#a78bfa' }}>
-                                  PDF ATTACHMENT DATA
-                                </Typography>
-                              </Box>
-                              
-                              {email.attachmentData.name && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                  <PersonIcon sx={{ fontSize: 16, color: 'rgba(255, 255, 255, 0.7)' }} />
-                                  <Typography variant="body2" sx={{ color: '#fff', fontWeight: 500 }}>
-                                    {email.attachmentData.name}
+                            {/* Resume Data */}
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {resume.attachmentData?.email && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                  <EmailIcon sx={{ fontSize: 20, color: '#2563eb' }} />
+                                  <Typography variant="body2" sx={{ color: '#475569', flex: 1 }}>
+                                    {resume.attachmentData.email}
                                   </Typography>
                                 </Box>
                               )}
-                              {email.attachmentData.email && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                  <EmailIcon sx={{ fontSize: 16, color: 'rgba(255, 255, 255, 0.7)' }} />
-                                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
-                                    {email.attachmentData.email}
+                              {resume.attachmentData?.contactNumber && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                  <PhoneIcon sx={{ fontSize: 20, color: '#7c3aed' }} />
+                                  <Typography variant="body2" sx={{ color: '#475569', flex: 1 }}>
+                                    {resume.attachmentData.contactNumber}
                                   </Typography>
                                 </Box>
                               )}
-                              {email.attachmentData.contactNumber && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                  <PhoneIcon sx={{ fontSize: 16, color: 'rgba(255, 255, 255, 0.7)' }} />
-                                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
-                                    {email.attachmentData.contactNumber}
+                              {resume.attachmentData?.dateOfBirth && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                  <CalendarIcon sx={{ fontSize: 20, color: '#10b981' }} />
+                                  <Typography variant="body2" sx={{ color: '#475569', flex: 1 }}>
+                                    {resume.attachmentData.dateOfBirth}
                                   </Typography>
                                 </Box>
                               )}
-                              {email.attachmentData.dateOfBirth && (
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <CalendarIcon sx={{ fontSize: 16, color: 'rgba(255, 255, 255, 0.7)' }} />
-                                  <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)' }}>
-                                    {email.attachmentData.dateOfBirth}
+                              {resume.attachmentData?.experience && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                  <WorkIcon sx={{ fontSize: 20, color: '#f59e0b' }} />
+                                  <Typography variant="body2" sx={{ color: '#475569', flex: 1 }}>
+                                    {resume.attachmentData.experience}
                                   </Typography>
                                 </Box>
                               )}
                             </Box>
-                          )}
 
-                          {/* Email Body */}
-                          <Paper
-                            sx={{
-                              p: 2,
-                              mb: 2,
-                              bgcolor: 'rgba(0, 0, 0, 0.2)',
-                              maxHeight: '150px',
-                              overflow: 'auto',
-                              '&::-webkit-scrollbar': {
-                                width: '6px',
-                              },
-                              '&::-webkit-scrollbar-track': {
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                borderRadius: '3px',
-                              },
-                              '&::-webkit-scrollbar-thumb': {
-                                background: 'rgba(255, 255, 255, 0.2)',
-                                borderRadius: '3px',
-                                '&:hover': {
-                                  background: 'rgba(255, 255, 255, 0.3)',
-                                },
-                              },
-                            }}
-                          >
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                color: 'rgba(255, 255, 255, 0.8)',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                fontSize: '0.875rem',
-                                lineHeight: 1.6,
-                              }}
-                            >
-                              {email.body || '(No content)'}
-                            </Typography>
-                          </Paper>
-
-                          {/* Footer */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 'auto' }}>
-                            <Typography
-                              variant="caption"
-                              sx={{
-                                color: 'rgba(255, 255, 255, 0.6)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 0.5,
-                              }}
-                            >
-                              <CalendarIcon sx={{ fontSize: 14 }} />
-                              {formatDate(email.receivedAt || email.createdAt)}
-                            </Typography>
-                            {email.hasAttachment && (
+                            {/* Footer */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 3, pt: 2, borderTop: '1px solid #e2e8f0' }}>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  color: '#94a3b8',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 0.5,
+                                }}
+                              >
+                                <CalendarIcon sx={{ fontSize: 14 }} />
+                                {formatDate(resume.receivedAt || resume.createdAt)}
+                              </Typography>
                               <Chip
-                                icon={<AttachFileIcon />}
-                                label="PDF"
+                                icon={<PersonIcon />}
+                                label="Resume"
                                 size="small"
                                 sx={{
-                                  bgcolor: 'rgba(99, 102, 241, 0.2)',
-                                  color: '#a78bfa',
-                                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                                  bgcolor: '#d1fae5',
+                                  color: '#065f46',
+                                  border: '1px solid #a7f3d0',
                                 }}
                               />
-                            )}
-                          </Box>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  </Grid>
-                ))}
-              </AnimatePresence>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    </Grid>
+                  ))}
+                </AnimatePresence>
+              </Grid>
+            )
+          ) : (
+            // Role Analytics Tab
+            <Grid container spacing={3}>
+              <Grid item xs={12} lg={6}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                >
+                  <Card sx={{ p: 3, height: '100%' }}>
+                    <Typography variant="h4" sx={{ mb: 3, color: '#1e293b', fontWeight: 700 }}>
+                      Role Distribution
+                    </Typography>
+                    {roleStats.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <PieChart>
+                          <Pie
+                            data={roleStats}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            outerRadius={120}
+                            fill="#8884d8"
+                            dataKey="value"
+                          >
+                            {roleStats.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <Box sx={{ textAlign: 'center', py: 8 }}>
+                        <Typography variant="body1" sx={{ color: '#64748b' }}>
+                          No role data available
+                        </Typography>
+                      </Box>
+                    )}
+                  </Card>
+                </motion.div>
+              </Grid>
+              <Grid item xs={12} lg={6}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                >
+                  <Card sx={{ p: 3, height: '100%' }}>
+                    <Typography variant="h4" sx={{ mb: 3, color: '#1e293b', fontWeight: 700 }}>
+                      Top Roles (Bar Chart)
+                    </Typography>
+                    {roleStats.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <BarChart data={roleStats}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis 
+                            dataKey="name" 
+                            stroke="#64748b"
+                            angle={-45}
+                            textAnchor="end"
+                            height={100}
+                          />
+                          <YAxis stroke="#64748b" />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#ffffff', 
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '8px'
+                            }}
+                          />
+                          <Bar dataKey="value" fill="#2563eb" radius={[8, 8, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <Box sx={{ textAlign: 'center', py: 8 }}>
+                        <Typography variant="body1" sx={{ color: '#64748b' }}>
+                          No role data available
+                        </Typography>
+                      </Box>
+                    )}
+                  </Card>
+                </motion.div>
+              </Grid>
+              <Grid item xs={12}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                >
+                  <Card sx={{ p: 3 }}>
+                    <Typography variant="h4" sx={{ mb: 3, color: '#1e293b', fontWeight: 700 }}>
+                      Role Statistics Table
+                    </Typography>
+                    <TableContainer>
+                      <Table>
+                        <TableHead>
+                          <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                            <TableCell sx={{ color: '#1e293b', fontWeight: 700 }}>Rank</TableCell>
+                            <TableCell sx={{ color: '#1e293b', fontWeight: 700 }}>Role</TableCell>
+                            <TableCell sx={{ color: '#1e293b', fontWeight: 700 }} align="right">Count</TableCell>
+                            <TableCell sx={{ color: '#1e293b', fontWeight: 700 }} align="right">Percentage</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {roleStats.map((role, index) => (
+                            <TableRow key={role.name} hover>
+                              <TableCell>
+                                <Chip
+                                  label={`#${index + 1}`}
+                                  size="small"
+                                  sx={{
+                                    bgcolor: COLORS[index % COLORS.length],
+                                    color: '#fff',
+                                    fontWeight: 700,
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                {role.name}
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: '#1e293b', fontWeight: 600 }}>
+                                {role.value}
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: '#64748b' }}>
+                                {((role.value / resumes.length) * 100).toFixed(1)}%
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Card>
+                </motion.div>
+              </Grid>
             </Grid>
           )}
         </Container>
       </Box>
-
-      <style>{`
-        @keyframes gradientShift {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
-        }
-      `}</style>
     </ThemeProvider>
   );
 }
