@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import io from 'socket.io-client';
+import UploadPage from './UploadPage';
+import LoginPage from './LoginPage';
 import {
   ThemeProvider,
   createTheme,
@@ -50,14 +53,22 @@ import {
   TrendingUp as TrendingUpIcon,
   Add as AddIcon,
   Link as LinkIcon,
-  CloudUpload as CloudUploadIcon
+  CloudUpload as CloudUploadIcon,
+  Share as ShareIcon,
+  ContentCopy as ContentCopyIcon,
+  Logout as LogoutIcon,
+  Search as SearchIcon,
+  FilterList as FilterListIcon,
+  FileDownload as FileDownloadIcon,
+  Download as DownloadIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import * as XLSX from 'xlsx';
+import ThreeDChart from './ThreeDChart';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-const socket = io(API_URL);
 
 // Professional light theme
 const theme = createTheme({
@@ -78,7 +89,7 @@ const theme = createTheme({
       paper: '#ffffff',
     },
     text: {
-      primary: '#1e293b',
+      primary: '#0f172a',
       secondary: '#64748b',
     },
     success: {
@@ -101,48 +112,103 @@ const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica", "Arial", sans-serif',
     h1: {
       fontWeight: 800,
       fontSize: '2.5rem',
-      letterSpacing: '-0.02em',
-      color: '#1e293b',
+      letterSpacing: '-0.025em',
+      color: '#0f172a',
+      lineHeight: 1.2,
     },
     h2: {
       fontWeight: 700,
-      fontSize: '1.75rem',
-      color: '#1e293b',
+      fontSize: '1.875rem',
+      letterSpacing: '-0.02em',
+      color: '#0f172a',
+      lineHeight: 1.3,
     },
     h3: {
       fontWeight: 600,
       fontSize: '1.5rem',
-      color: '#1e293b',
+      letterSpacing: '-0.015em',
+      color: '#0f172a',
+      lineHeight: 1.4,
     },
     h4: {
       fontWeight: 600,
       fontSize: '1.25rem',
-      color: '#1e293b',
+      color: '#0f172a',
+      lineHeight: 1.5,
+    },
+    h5: {
+      fontWeight: 600,
+      fontSize: '1.125rem',
+      color: '#0f172a',
+      lineHeight: 1.5,
+    },
+    h6: {
+      fontWeight: 600,
+      fontSize: '1rem',
+      color: '#0f172a',
+      lineHeight: 1.5,
     },
     body1: {
+      fontSize: '1rem',
       color: '#475569',
+      lineHeight: 1.6,
     },
     body2: {
+      fontSize: '0.875rem',
       color: '#64748b',
+      lineHeight: 1.5,
+    },
+    button: {
+      fontWeight: 600,
+      letterSpacing: '0.01em',
     },
   },
   shape: {
-    borderRadius: 12,
+    borderRadius: 16,
   },
+  shadows: [
+    'none',
+    '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+    '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+  ],
   components: {
     MuiCard: {
       styleOverrides: {
         root: {
-          boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-          border: '1px solid #e2e8f0',
-          transition: 'all 0.3s ease',
+          boxShadow: 'none',
+          border: '1px solid rgba(226, 232, 240, 0.8)',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          overflow: 'hidden',
           '&:hover': {
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            boxShadow: 'none',
             transform: 'translateY(-2px)',
+            borderColor: 'rgba(37, 99, 235, 0.3)',
           },
         },
       },
@@ -152,8 +218,51 @@ const theme = createTheme({
         root: {
           textTransform: 'none',
           fontWeight: 600,
+          borderRadius: 12,
+          padding: '12px 28px',
+          fontSize: '0.9375rem',
+          letterSpacing: '0.01em',
+          boxShadow: 'none',
+          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          '&:hover': {
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            transform: 'translateY(-1px)',
+          },
+        },
+        contained: {
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          '&:hover': {
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          },
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 12,
+            transition: 'all 0.2s ease',
+            '&:hover': {
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: '#2563eb',
+              },
+            },
+            '&.Mui-focused': {
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderWidth: '2px',
+              },
+            },
+          },
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
           borderRadius: 8,
-          padding: '10px 24px',
+          fontWeight: 500,
+          fontSize: '0.8125rem',
         },
       },
     },
@@ -169,7 +278,7 @@ const cardVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
-function App() {
+function Dashboard() {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(null);
@@ -179,6 +288,9 @@ function App() {
   const [addResumeOpen, setAddResumeOpen] = useState(false);
   const [resumeUrl, setResumeUrl] = useState('');
   const [addingResume, setAddingResume] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRole, setSelectedRole] = useState('all');
 
   // Filter only emails with resume data
   const resumes = useMemo(() => {
@@ -188,6 +300,40 @@ function App() {
       (email.attachmentData.name || email.attachmentData.email)
     );
   }, [emails]);
+
+  // Filtered resumes based on search and role
+  const filteredResumes = useMemo(() => {
+    let filtered = resumes;
+
+    // Filter by search query (name)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(resume => {
+        const name = (resume.attachmentData?.name || '').toLowerCase();
+        return name.includes(query);
+      });
+    }
+
+    // Filter by role
+    if (selectedRole !== 'all') {
+      filtered = filtered.filter(resume => {
+        const role = resume.attachmentData?.role || 'Not Specified';
+        return role === selectedRole;
+      });
+    }
+
+    return filtered;
+  }, [resumes, searchQuery, selectedRole]);
+
+  // Get unique roles for filter dropdown
+  const uniqueRoles = useMemo(() => {
+    const roles = new Set();
+    resumes.forEach(resume => {
+      const role = resume.attachmentData?.role || 'Not Specified';
+      roles.add(role);
+    });
+    return Array.from(roles).sort();
+  }, [resumes]);
 
   // Calculate role statistics
   const roleStats = useMemo(() => {
@@ -203,16 +349,126 @@ function App() {
       .slice(0, 10); // Top 10 roles
   }, [resumes]);
 
+  // Export to XLSX function
+  const exportToExcel = () => {
+    const data = filteredResumes.map(resume => ({
+      'Name': resume.attachmentData?.name || 'N/A',
+      'Email': resume.attachmentData?.email || 'N/A',
+      'Mobile Number': resume.attachmentData?.contactNumber || 'N/A',
+      'Date of Birth': resume.attachmentData?.dateOfBirth || 'N/A',
+      'Experience': resume.attachmentData?.experience || 'N/A',
+      'Role': resume.attachmentData?.role || 'Not Specified',
+      'Received At': resume.receivedAt ? new Date(resume.receivedAt).toLocaleDateString() : 'N/A',
+      'Subject': resume.subject || 'N/A'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resume Data');
+    
+    // Auto-size columns
+    const colWidths = [
+      { wch: 25 }, // Name
+      { wch: 30 }, // Email
+      { wch: 18 }, // Mobile Number
+      { wch: 15 }, // Date of Birth
+      { wch: 15 }, // Experience
+      { wch: 25 }, // Role
+      { wch: 15 }, // Received At
+      { wch: 40 }  // Subject
+    ];
+    ws['!cols'] = colWidths;
+
+    const fileName = `Resume_Data_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    
+    setNotification({
+      type: 'success',
+      message: `Exported ${filteredResumes.length} resume(s) to ${fileName}`
+    });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [adminData, setAdminData] = useState(null);
+
+  // Health check function to verify backend is reachable
+  const checkBackendHealth = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/health`, { timeout: 3000 });
+      if (response.status === 200) {
+        setIsConnected(true);
+        return true;
+      }
+    } catch (error) {
+      console.error('Backend health check failed:', error);
+      setIsConnected(false);
+      return false;
+    }
+    return false;
+  };
+
+  // Check authentication on mount
   useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const response = await axios.get(`${API_URL}/api/auth/verify`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setIsAuthenticated(true);
+        setAdminData(response.data.admin);
+        setAuthLoading(false);
+      } catch (error) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('adminData');
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Initialize socket connection after authentication
+    const newSocket = io(API_URL, {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      timeout: 20000
+    });
+    setSocket(newSocket);
+
+    // Initial health check
+    checkBackendHealth();
     fetchEmails();
     fetchStats();
 
-    socket.on('connect', () => {
-      console.log('Connected to server');
+    // Set up periodic health check (every 10 seconds)
+    const healthCheckInterval = setInterval(() => {
+      checkBackendHealth();
+    }, 10000);
+
+    newSocket.on('connect', () => {
+      console.log('Connected to server via Socket.IO');
       setIsConnected(true);
     });
 
-    socket.on('newEmail', (data) => {
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket.IO connection error:', error);
+      // Don't set offline if API is still reachable
+      checkBackendHealth();
+    });
+
+    newSocket.on('newEmail', (data) => {
       setNotification({
         type: 'success',
         message: data.message,
@@ -226,25 +482,40 @@ function App() {
       }, 5000);
     });
 
-    socket.on('disconnect', () => {
-      console.log('Disconnected from server');
-      setIsConnected(false);
+    newSocket.on('disconnect', () => {
+      console.log('Disconnected from server via Socket.IO');
+      // Check if API is still reachable even if socket disconnected
+      checkBackendHealth();
     });
 
     return () => {
-      socket.off('connect');
-      socket.off('newEmail');
-      socket.off('disconnect');
+      clearInterval(healthCheckInterval);
+      if (newSocket) {
+        newSocket.off('connect');
+        newSocket.off('connect_error');
+        newSocket.off('newEmail');
+        newSocket.off('disconnect');
+        newSocket.disconnect();
+      }
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const fetchEmails = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/resumes`);
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_URL}/api/resumes`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setEmails(response.data);
     } catch (error) {
       console.error('Error fetching emails:', error);
+      if (error.response?.status === 401) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('adminData');
+        window.location.href = '/login';
+        return;
+      }
       setNotification({
         type: 'error',
         message: 'Failed to fetch resumes'
@@ -256,16 +527,27 @@ function App() {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/resumes/stats/count`);
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_URL}/api/resumes/stats/count`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setStats(response.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
+      if (error.response?.status === 401) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('adminData');
+        window.location.href = '/login';
+      }
     }
   };
 
   const deleteResume = async (id) => {
     try {
-      await axios.delete(`${API_URL}/api/resumes/${id}`);
+      const token = localStorage.getItem('authToken');
+      await axios.delete(`${API_URL}/api/resumes/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       fetchEmails();
       fetchStats();
       setNotification({
@@ -275,6 +557,12 @@ function App() {
       setTimeout(() => setNotification(null), 3000);
     } catch (error) {
       console.error('Error deleting resume:', error);
+      if (error.response?.status === 401) {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('adminData');
+        window.location.href = '/login';
+        return;
+      }
       setNotification({
         type: 'error',
         message: 'Failed to delete resume'
@@ -294,8 +582,11 @@ function App() {
 
     try {
       setAddingResume(true);
+      const token = localStorage.getItem('authToken');
       const response = await axios.post(`${API_URL}/api/resumes/add-from-url`, {
         url: resumeUrl.trim()
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       setNotification({
@@ -339,81 +630,222 @@ function App() {
     setTabValue(newValue);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('adminData');
+    window.location.href = '/login';
+  };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+          <CircularProgress size={60} sx={{ color: '#2563eb' }} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  // Redirect to login if not authenticated
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box
         sx={{
           minHeight: '100vh',
-          background: 'linear-gradient(to bottom, #f8fafc 0%, #ffffff 100%)',
+          background: '#ffffff',
           padding: { xs: 2, sm: 3, md: 4 },
+          position: 'relative',
         }}
       >
-        <Container maxWidth="xl">
+        <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1 }}>
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
           >
-            <Box sx={{ mb: 4, mt: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Box>
-                  <Typography
-                    variant="h1"
-                    sx={{
-                      background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      backgroundClip: 'text',
-                      mb: 1,
-                      fontWeight: 900,
-                      fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' },
-                    }}
-                  >
-                    youHRpower
-                  </Typography>
+            <Card
+              sx={{
+                mb: 4,
+                mt: 2,
+                p: { xs: 2, sm: 3, md: 4 },
+                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(226, 232, 240, 0.8)',
+                boxShadow: 'none',
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexWrap: { xs: 'wrap', md: 'nowrap' }, gap: 3 }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5, flexWrap: 'wrap' }}>
+                    <Typography
+                      variant="h1"
+                      sx={{
+                        background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                        fontWeight: 900,
+                        fontSize: { xs: '1.875rem', sm: '2.5rem', md: '3rem' },
+                        letterSpacing: '-0.03em',
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      youHRpower
+                    </Typography>
+                    {adminData && (
+                      <Chip
+                        label={`Admin: ${adminData.username}`}
+                        size="small"
+                        sx={{
+                          bgcolor: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
+                          background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
+                          color: '#2563eb',
+                          fontWeight: 600,
+                          fontSize: '0.8125rem',
+                          height: '28px',
+                          border: '1px solid rgba(37, 99, 235, 0.2)',
+                        }}
+                      />
+                    )}
+                  </Box>
                   <Typography
                     variant="subtitle1"
                     sx={{
                       color: '#64748b',
-                      fontSize: { xs: '0.9rem', sm: '1rem' },
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
+                      fontWeight: 500,
+                      letterSpacing: '0.01em',
                     }}
                   >
                     Intelligent Resume Management System
                   </Typography>
                 </Box>
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => setAddResumeOpen(true)}
-                  sx={{
-                    background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
-                    boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #1e40af 0%, #6d28d9 100%)',
-                      boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.4)',
-                    },
-                  }}
-                >
-                  Add Resume
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ShareIcon />}
+                    onClick={() => {
+                      const uploadLink = `${window.location.origin}/upload`;
+                      navigator.clipboard.writeText(uploadLink);
+                      setNotification({
+                        type: 'success',
+                        message: 'Shareable link copied to clipboard!'
+                      });
+                      setTimeout(() => setNotification(null), 3000);
+                    }}
+                    sx={{
+                      borderColor: '#2563eb',
+                      color: '#2563eb',
+                      borderWidth: '1.5px',
+                      fontWeight: 600,
+                      '&:hover': {
+                        borderColor: '#1e40af',
+                        bgcolor: '#eff6ff',
+                        borderWidth: '1.5px',
+                        transform: 'translateY(-1px)',
+                      },
+                    }}
+                  >
+                    Share Link
+                  </Button>
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={() => setAddResumeOpen(true)}
+                    sx={{
+                      background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                      boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                      fontWeight: 600,
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #1e40af 0%, #6d28d9 100%)',
+                        boxShadow: '0 8px 20px rgba(37, 99, 235, 0.4)',
+                        transform: 'translateY(-2px)',
+                      },
+                    }}
+                  >
+                    Add Resume
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<LogoutIcon />}
+                    onClick={handleLogout}
+                    sx={{
+                      borderColor: '#ef4444',
+                      color: '#ef4444',
+                      borderWidth: '1.5px',
+                      fontWeight: 600,
+                      '&:hover': {
+                        borderColor: '#dc2626',
+                        bgcolor: '#fee2e2',
+                        borderWidth: '1.5px',
+                        transform: 'translateY(-1px)',
+                      },
+                    }}
+                  >
+                    Logout
+                  </Button>
+                </Box>
               </Box>
+            </Card>
+          </motion.div>
 
-              {/* Stats Cards */}
-              <Grid container spacing={3} sx={{ mb: 4 }}>
+          {/* Stats Cards */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+          >
+            <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={6} md={3}>
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.1 }}
+                    whileHover={{ y: -4 }}
                   >
-                    <Card>
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <BusinessCenterIcon sx={{ fontSize: 40, color: '#2563eb', mb: 1 }} />
-                        <Typography variant="h2" sx={{ color: '#1e293b', fontWeight: 700, mb: 1 }}>
+                    <Card
+                      sx={{
+                        background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(37, 99, 235, 0.02) 100%)',
+                        border: '1px solid rgba(37, 99, 235, 0.1)',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          width: '100px',
+                          height: '100px',
+                          background: 'radial-gradient(circle, rgba(37, 99, 235, 0.1) 0%, transparent 70%)',
+                          borderRadius: '50%',
+                          transform: 'translate(30px, -30px)',
+                        },
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 4, position: 'relative', zIndex: 1 }}>
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            p: 1.5,
+                            borderRadius: 2,
+                            bgcolor: 'rgba(37, 99, 235, 0.1)',
+                            mb: 2,
+                          }}
+                        >
+                          <BusinessCenterIcon sx={{ fontSize: 32, color: '#2563eb' }} />
+                        </Box>
+                        <Typography variant="h2" sx={{ color: '#0f172a', fontWeight: 800, mb: 0.5, fontSize: { xs: '2rem', sm: '2.25rem' } }}>
                           {resumes.length}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 500, fontSize: '0.9375rem' }}>
                           Total Resumes
                         </Typography>
                       </CardContent>
@@ -422,16 +854,46 @@ function App() {
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.2 }}
+                    whileHover={{ y: -4 }}
                   >
-                    <Card>
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <AssessmentIcon sx={{ fontSize: 40, color: '#7c3aed', mb: 1 }} />
-                        <Typography variant="h2" sx={{ color: '#1e293b', fontWeight: 700, mb: 1 }}>
+                    <Card
+                      sx={{
+                        background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.05) 0%, rgba(124, 58, 237, 0.02) 100%)',
+                        border: '1px solid rgba(124, 58, 237, 0.1)',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          width: '100px',
+                          height: '100px',
+                          background: 'radial-gradient(circle, rgba(124, 58, 237, 0.1) 0%, transparent 70%)',
+                          borderRadius: '50%',
+                          transform: 'translate(30px, -30px)',
+                        },
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 4, position: 'relative', zIndex: 1 }}>
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            p: 1.5,
+                            borderRadius: 2,
+                            bgcolor: 'rgba(124, 58, 237, 0.1)',
+                            mb: 2,
+                          }}
+                        >
+                          <AssessmentIcon sx={{ fontSize: 32, color: '#7c3aed' }} />
+                        </Box>
+                        <Typography variant="h2" sx={{ color: '#0f172a', fontWeight: 800, mb: 0.5, fontSize: { xs: '2rem', sm: '2.25rem' } }}>
                           {roleStats.length}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 500, fontSize: '0.9375rem' }}>
                           Unique Roles
                         </Typography>
                       </CardContent>
@@ -440,17 +902,55 @@ function App() {
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.3 }}
+                    whileHover={{ y: -4 }}
                   >
-                    <Card>
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        {isConnected ? (
-                          <CheckCircleIcon sx={{ fontSize: 40, color: '#10b981', mb: 1 }} />
-                        ) : (
-                          <ErrorIcon sx={{ fontSize: 40, color: '#ef4444', mb: 1 }} />
-                        )}
-                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                    <Card
+                      sx={{
+                        background: isConnected 
+                          ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.02) 100%)'
+                          : 'linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(239, 68, 68, 0.02) 100%)',
+                        border: isConnected 
+                          ? '1px solid rgba(16, 185, 129, 0.1)'
+                          : '1px solid rgba(239, 68, 68, 0.1)',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          width: '100px',
+                          height: '100px',
+                          background: isConnected
+                            ? 'radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%)'
+                            : 'radial-gradient(circle, rgba(239, 68, 68, 0.1) 0%, transparent 70%)',
+                          borderRadius: '50%',
+                          transform: 'translate(30px, -30px)',
+                        },
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 4, position: 'relative', zIndex: 1 }}>
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            p: 1.5,
+                            borderRadius: 2,
+                            bgcolor: isConnected 
+                              ? 'rgba(16, 185, 129, 0.1)'
+                              : 'rgba(239, 68, 68, 0.1)',
+                            mb: 2,
+                          }}
+                        >
+                          {isConnected ? (
+                            <CheckCircleIcon sx={{ fontSize: 32, color: '#10b981' }} />
+                          ) : (
+                            <ErrorIcon sx={{ fontSize: 32, color: '#ef4444' }} />
+                          )}
+                        </Box>
+                        <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 600, fontSize: '0.9375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           {isConnected ? 'Live Sync' : 'Offline'}
                         </Typography>
                       </CardContent>
@@ -459,16 +959,46 @@ function App() {
                 </Grid>
                 <Grid item xs={12} sm={6} md={3}>
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.4 }}
+                    whileHover={{ y: -4 }}
                   >
-                    <Card>
-                      <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                        <TrendingUpIcon sx={{ fontSize: 40, color: '#f59e0b', mb: 1 }} />
-                        <Typography variant="h2" sx={{ color: '#1e293b', fontWeight: 700, mb: 1 }}>
+                    <Card
+                      sx={{
+                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(245, 158, 11, 0.02) 100%)',
+                        border: '1px solid rgba(245, 158, 11, 0.1)',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          width: '100px',
+                          height: '100px',
+                          background: 'radial-gradient(circle, rgba(245, 158, 11, 0.1) 0%, transparent 70%)',
+                          borderRadius: '50%',
+                          transform: 'translate(30px, -30px)',
+                        },
+                      }}
+                    >
+                      <CardContent sx={{ textAlign: 'center', py: 4, position: 'relative', zIndex: 1 }}>
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            p: 1.5,
+                            borderRadius: 2,
+                            bgcolor: 'rgba(245, 158, 11, 0.1)',
+                            mb: 2,
+                          }}
+                        >
+                          <TrendingUpIcon sx={{ fontSize: 32, color: '#f59e0b' }} />
+                        </Box>
+                        <Typography variant="h2" sx={{ color: '#0f172a', fontWeight: 800, mb: 0.5, fontSize: { xs: '2rem', sm: '2.25rem' } }}>
                           {roleStats[0]?.value || 0}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 500, fontSize: '0.9375rem' }}>
                           Top Role Count
                         </Typography>
                       </CardContent>
@@ -476,7 +1006,6 @@ function App() {
                   </motion.div>
                 </Grid>
               </Grid>
-            </Box>
           </motion.div>
 
           {/* Notification Snackbar */}
@@ -566,22 +1095,57 @@ function App() {
           </Dialog>
 
           {/* Tabs */}
-          <Box sx={{ mb: 4, borderBottom: 1, borderColor: 'divider' }}>
-            <Tabs
-              value={tabValue}
-              onChange={handleTabChange}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.2 }}
+          >
+            <Card
               sx={{
-                '& .MuiTab-root': {
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                },
+                mb: 4,
+                p: 0,
+                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%)',
+                border: '1px solid rgba(226, 232, 240, 0.8)',
+                boxShadow: 'none',
               }}
             >
-              <Tab label="Resume Dashboard" icon={<BusinessCenterIcon />} iconPosition="start" />
-              <Tab label="Role Analytics" icon={<AssessmentIcon />} iconPosition="start" />
-            </Tabs>
-          </Box>
+              <Tabs
+                value={tabValue}
+                onChange={handleTabChange}
+                sx={{
+                  px: 2,
+                  '& .MuiTab-root': {
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    fontSize: '0.9375rem',
+                    minHeight: 64,
+                    color: '#64748b',
+                    '&.Mui-selected': {
+                      color: '#2563eb',
+                    },
+                  },
+                  '& .MuiTabs-indicator': {
+                    height: 3,
+                    borderRadius: '3px 3px 0 0',
+                    background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                  },
+                }}
+              >
+                <Tab 
+                  label="Resume Dashboard" 
+                  icon={<BusinessCenterIcon sx={{ fontSize: 20 }} />} 
+                  iconPosition="start"
+                  sx={{ gap: 1.5 }}
+                />
+                <Tab 
+                  label="Role Analytics" 
+                  icon={<AssessmentIcon sx={{ fontSize: 20 }} />} 
+                  iconPosition="start"
+                  sx={{ gap: 1.5 }}
+                />
+              </Tabs>
+            </Card>
+          </motion.div>
 
           {/* Main Content */}
           {loading ? (
@@ -590,7 +1154,130 @@ function App() {
             </Box>
           ) : tabValue === 0 ? (
             // Resume Dashboard Tab
-            resumes.length === 0 ? (
+            <>
+              {/* Search and Filter Section */}
+              {resumes.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                >
+                  <Card 
+                    sx={{ 
+                      mb: 3, 
+                      p: 3,
+                      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%)',
+                      border: '1px solid rgba(226, 232, 240, 0.8)',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    <Grid container spacing={2.5} alignItems="center">
+                      <Grid item xs={12} md={5}>
+                        <TextField
+                          fullWidth
+                          placeholder="Search by candidate name..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          variant="outlined"
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <SearchIcon sx={{ color: '#64748b', fontSize: 20 }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: 2,
+                              bgcolor: '#f8fafc',
+                              '&:hover': {
+                                bgcolor: '#f1f5f9',
+                              },
+                              '&.Mui-focused': {
+                                bgcolor: '#ffffff',
+                              },
+                            },
+                          }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={4}>
+                        <TextField
+                          fullWidth
+                          select
+                          label="Filter by Role"
+                          value={selectedRole}
+                          onChange={(e) => setSelectedRole(e.target.value)}
+                          SelectProps={{
+                            native: true,
+                          }}
+                          variant="outlined"
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <FilterListIcon sx={{ color: '#64748b', fontSize: 20 }} />
+                              </InputAdornment>
+                            ),
+                          }}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: 2,
+                              bgcolor: '#f8fafc',
+                              '&:hover': {
+                                bgcolor: '#f1f5f9',
+                              },
+                              '&.Mui-focused': {
+                                bgcolor: '#ffffff',
+                              },
+                            },
+                            '& .MuiInputLabel-root': {
+                              fontWeight: 500,
+                            },
+                          }}
+                        >
+                          <option value="all">All Roles ({resumes.length})</option>
+                          {uniqueRoles.map((role) => {
+                            const count = resumes.filter(r => (r.attachmentData?.role || 'Not Specified') === role).length;
+                            return (
+                              <option key={role} value={role}>
+                                {role} ({count})
+                              </option>
+                            );
+                          })}
+                        </TextField>
+                      </Grid>
+                      <Grid item xs={12} md={3}>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          startIcon={<FileDownloadIcon />}
+                          onClick={exportToExcel}
+                          disabled={filteredResumes.length === 0}
+                          sx={{
+                            py: 1.75,
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                            fontWeight: 600,
+                            fontSize: '0.9375rem',
+                            '&:hover': {
+                              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                              boxShadow: '0 8px 20px rgba(16, 185, 129, 0.4)',
+                              transform: 'translateY(-2px)',
+                            },
+                            '&:disabled': {
+                              background: '#cbd5e1',
+                              color: '#94a3b8',
+                            },
+                          }}
+                        >
+                          Export XLSX ({filteredResumes.length})
+                        </Button>
+                      </Grid>
+                    </Grid>
+                  </Card>
+                </motion.div>
+              )}
+
+              {resumes.length === 0 ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -626,7 +1313,32 @@ function App() {
             ) : (
               <Grid container spacing={3}>
                 <AnimatePresence>
-                  {resumes.map((resume, index) => (
+                  {filteredResumes.length === 0 && resumes.length > 0 ? (
+                    <Grid item xs={12}>
+                      <Card sx={{ textAlign: 'center', py: 6 }}>
+                        <CardContent>
+                          <SearchIcon sx={{ fontSize: 60, color: '#cbd5e1', mb: 2 }} />
+                          <Typography variant="h5" sx={{ mb: 1, color: '#1e293b' }}>
+                            No Resumes Found
+                          </Typography>
+                          <Typography variant="body1" sx={{ color: '#64748b', mb: 3 }}>
+                            Try adjusting your search or filter criteria
+                          </Typography>
+                          <Button
+                            variant="outlined"
+                            onClick={() => {
+                              setSearchQuery('');
+                              setSelectedRole('all');
+                            }}
+                            sx={{ color: '#2563eb', borderColor: '#2563eb' }}
+                          >
+                            Clear Filters
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ) : (
+                    filteredResumes.map((resume, index) => (
                     <Grid item xs={12} md={6} lg={4} key={resume._id}>
                       <motion.div
                         variants={cardVariants}
@@ -758,25 +1470,134 @@ function App() {
                                 <CalendarIcon sx={{ fontSize: 14 }} />
                                 {formatDate(resume.receivedAt || resume.createdAt)}
                               </Typography>
-                              <Chip
-                                icon={<PersonIcon />}
-                                label="Resume"
-                                size="small"
-                                sx={{
-                                  bgcolor: '#d1fae5',
-                                  color: '#065f46',
-                                  border: '1px solid #a7f3d0',
-                                }}
-                              />
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<DownloadIcon />}
+                                  onClick={async () => {
+                                    try {
+                                      const token = localStorage.getItem('authToken');
+                                      
+                                      if (!token) {
+                                        throw new Error('Not authenticated. Please login again.');
+                                      }
+                                      
+                                      console.log(`📥 Downloading PDF for resume ID: ${resume._id}`);
+                                      
+                                      // Use fetch instead of axios for blob download
+                                      const response = await fetch(`${API_URL}/api/resumes/download/${resume._id}`, {
+                                        headers: { 
+                                          'Authorization': `Bearer ${token}` 
+                                        },
+                                      });
+                                      
+                                      console.log(`📥 Response status: ${response.status}`);
+                                      
+                                      // Check if response is OK
+                                      if (!response.ok) {
+                                        // Try to get error message from response
+                                        let errorMessage = 'Failed to download PDF';
+                                        try {
+                                          const contentType = response.headers.get('content-type');
+                                          if (contentType && contentType.includes('application/json')) {
+                                            const errorData = await response.json();
+                                            errorMessage = errorData.error || errorMessage;
+                                          } else {
+                                            const text = await response.text();
+                                            if (text) {
+                                              try {
+                                                const errorData = JSON.parse(text);
+                                                errorMessage = errorData.error || errorMessage;
+                                              } catch {
+                                                errorMessage = text || errorMessage;
+                                              }
+                                            }
+                                          }
+                                        } catch (e) {
+                                          console.error('Error parsing error response:', e);
+                                          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                                        }
+                                        throw new Error(errorMessage);
+                                      }
+                                      
+                                      // Check if response is actually a PDF
+                                      const contentType = response.headers.get('content-type');
+                                      if (!contentType || !contentType.includes('application/pdf')) {
+                                        console.warn('⚠️ Response is not a PDF, content-type:', contentType);
+                                      }
+                                      
+                                      // Get blob from response
+                                      const blob = await response.blob();
+                                      
+                                      if (blob.size === 0) {
+                                        throw new Error('Downloaded file is empty');
+                                      }
+                                      
+                                      console.log(`✅ PDF blob received, size: ${blob.size} bytes`);
+                                      
+                                      // Create blob URL and download
+                                      const url = window.URL.createObjectURL(blob);
+                                      const link = document.createElement('a');
+                                      link.href = url;
+                                      const fileName = `${resume.attachmentData?.name || 'resume'}_resume.pdf`;
+                                      link.setAttribute('download', fileName);
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      link.remove();
+                                      window.URL.revokeObjectURL(url);
+                                      
+                                      setNotification({
+                                        type: 'success',
+                                        message: 'Resume PDF downloaded successfully!'
+                                      });
+                                      setTimeout(() => setNotification(null), 3000);
+                                    } catch (error) {
+                                      console.error('❌ Error downloading PDF:', error);
+                                      setNotification({
+                                        type: 'error',
+                                        message: error.message || 'Failed to download PDF'
+                                      });
+                                      setTimeout(() => setNotification(null), 5000);
+                                    }
+                                  }}
+                                  sx={{
+                                    borderColor: '#2563eb',
+                                    color: '#2563eb',
+                                    fontSize: '0.75rem',
+                                    py: 0.5,
+                                    px: 1.5,
+                                    minWidth: 'auto',
+                                    '&:hover': {
+                                      borderColor: '#1e40af',
+                                      bgcolor: '#eff6ff',
+                                    },
+                                  }}
+                                >
+                                  Download PDF
+                                </Button>
+                                <Chip
+                                  icon={<PersonIcon />}
+                                  label="Resume"
+                                  size="small"
+                                  sx={{
+                                    bgcolor: '#d1fae5',
+                                    color: '#065f46',
+                                    border: '1px solid #a7f3d0',
+                                  }}
+                                />
+                              </Box>
                             </Box>
                           </CardContent>
                         </Card>
                       </motion.div>
                     </Grid>
-                  ))}
+                    ))
+                  )}
                 </AnimatePresence>
               </Grid>
-            )
+            )}
+            </>
           ) : (
             // Role Analytics Tab
             <Grid container spacing={3}>
@@ -786,31 +1607,36 @@ function App() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <Card sx={{ p: 3, height: '100%' }}>
+                  <Card sx={{ p: 3, height: '100%', minHeight: '500px' }}>
                     <Typography variant="h4" sx={{ mb: 3, color: '#1e293b', fontWeight: 700 }}>
-                      Role Distribution
+                      3D Role Distribution
                     </Typography>
                     {roleStats.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={400}>
-                        <PieChart>
-                          <Pie
-                            data={roleStats}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                            outerRadius={120}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            {roleStats.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <Box sx={{ width: '100%', height: '450px', position: 'relative' }}>
+                        <ThreeDChart data={roleStats} />
+                        <Box sx={{ position: 'absolute', bottom: 10, left: 10, bgcolor: 'rgba(255, 255, 255, 0.9)', p: 1.5, borderRadius: 2, backdropFilter: 'blur(10px)' }}>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.75rem' }}>
+                            💡 Drag to rotate • Scroll to zoom
+                          </Typography>
+                        </Box>
+                        {/* Labels overlay */}
+                        <Box sx={{ position: 'absolute', top: 10, right: 10, bgcolor: 'rgba(255, 255, 255, 0.95)', p: 2, borderRadius: 2, minWidth: '200px' }}>
+                          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: '#1e293b' }}>
+                            Role Distribution
+                          </Typography>
+                          {roleStats.map((item, index) => {
+                            const colors = ['#2563eb', '#7c3aed', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+                            return (
+                              <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: colors[index % colors.length] }} />
+                                <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.75rem' }}>
+                                  {item.name}: {item.value}
+                                </Typography>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </Box>
                     ) : (
                       <Box sx={{ textAlign: 'center', py: 8 }}>
                         <Typography variant="body1" sx={{ color: '#64748b' }}>
@@ -919,6 +1745,42 @@ function App() {
         </Container>
       </Box>
     </ThemeProvider>
+  );
+}
+
+// Protected Route Component
+function ProtectedRoute({ children }) {
+  const token = localStorage.getItem('authToken');
+  
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+}
+
+// Main App Component with Routing
+function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route 
+        path="/upload" 
+        element={
+          <ProtectedRoute>
+            <UploadPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/" 
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        } 
+      />
+    </Routes>
   );
 }
 

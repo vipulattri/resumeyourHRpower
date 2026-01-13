@@ -17,6 +17,7 @@ const io = socketIo(server, {
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // For form data
 
 // Helper function to properly encode MongoDB connection string password
 function encodeMongoPassword(uri) {
@@ -82,6 +83,13 @@ mongoose.connect(MONGODB_URI, {
   console.log(`   Database: ${mongoose.connection.name}`);
   console.log(`   Host: ${mongoose.connection.host}:${mongoose.connection.port}`);
   mongoose.set('bufferCommands', true);
+
+  // Ensure a default admin exists after successful DB connection
+  try {
+    ensureDefaultAdmin().catch(err => console.error('Error ensuring default admin:', err));
+  } catch (e) {
+    console.error('Error invoking ensureDefaultAdmin:', e);
+  }
 })
 .catch(err => {
   console.error('\n❌ MongoDB connection FAILED!');
@@ -127,11 +135,26 @@ mongoose.connection.on('connecting', () => {
 
 // Import routes and services
 const emailRoutes = require('./routes/emailRoutes');
+const { router: authRoutes, ensureDefaultAdmin } = require('./routes/authRoutes');
 const emailService = require('./services/emailService');
+const { authenticate } = require('./middleware/auth');
 
-// Routes
-app.use('/api/resumes', emailRoutes); // Using same endpoint for compatibility
-app.use('/api/emails', emailRoutes);
+// Public routes (no authentication required)
+app.use('/api/auth', authRoutes);
+
+// Protected routes (authentication required)
+app.use('/api/resumes', authenticate, emailRoutes); // Using same endpoint for compatibility
+app.use('/api/emails', authenticate, emailRoutes);
+
+// Debug: Log route registration
+console.log('📋 Registered routes:');
+console.log('   POST /api/resumes/upload - File upload');
+console.log('   GET  /api/resumes - Get all resumes');
+console.log('   GET  /api/resumes/stats/count - Get count');
+console.log('   GET  /api/resumes/test-upload-route - Test route');
+console.log('   GET  /api/resumes/download/:id - Download PDF');
+console.log('   GET  /api/resumes/:id - Get single resume');
+console.log('   DELETE /api/resumes/:id - Delete resume');
 
 // Socket.io connection
 io.on('connection', (socket) => {
@@ -145,6 +168,14 @@ io.on('connection', (socket) => {
 // Make io accessible to email service
 app.set('io', io);
 
+// Debug middleware to log all requests (before routes)
+app.use((req, res, next) => {
+  if (req.path.includes('/upload') || req.path.includes('/api/resumes') || req.path.includes('/download')) {
+    console.log(`🔍 Incoming Request: ${req.method} ${req.path} | Original: ${req.originalUrl}`);
+  }
+  next();
+});
+
 // Start email monitoring
 emailService.startMonitoring(io);
 
@@ -156,7 +187,13 @@ app.get('/api/health', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`\n✅ Server running on port ${PORT}`);
+  console.log(`\n📋 Available API endpoints:`);
+  console.log(`   POST http://localhost:${PORT}/api/resumes/upload`);
+  console.log(`   GET  http://localhost:${PORT}/api/resumes`);
+  console.log(`   GET  http://localhost:${PORT}/api/resumes/stats/count`);
+  console.log(`   GET  http://localhost:${PORT}/api/resumes/test-upload-route`);
+  console.log(`   GET  http://localhost:${PORT}/api/health\n`);
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\n⚠️  Port ${PORT} is already in use!`);
